@@ -57,6 +57,9 @@
 #include "utils.h"
 
 #ifdef Q_OS_MACOS
+#include <QProxyStyle>
+#include <QStyleFactory>
+
 #include "gui/macutilities.h"
 #endif
 
@@ -71,6 +74,37 @@ namespace
 
         return persistentIndexes;
     }
+
+#ifdef Q_OS_MACOS
+    // The native macOS style draws item view check boxes that are hard or impossible to see
+    // on recent macOS versions (e.g. macOS 26 in dark mode).
+    // Use Fusion style for drawing these indicators only and keep the native style for everything else.
+    class MacItemCheckStyle final : public QProxyStyle
+    {
+    public:
+        explicit MacItemCheckStyle(const QString &baseStyleKey)
+            : QProxyStyle(baseStyleKey)
+            , m_fusionStyle {QStyleFactory::create(u"fusion"_s)}
+        {
+            if (m_fusionStyle)
+                m_fusionStyle->setParent(this);
+        }
+
+        void drawPrimitive(const PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget) const override
+        {
+            if ((element == PE_IndicatorItemViewItemCheck) && m_fusionStyle)
+            {
+                m_fusionStyle->drawPrimitive(element, option, painter, widget);
+                return;
+            }
+
+            QProxyStyle::drawPrimitive(element, option, painter, widget);
+        }
+
+    private:
+        QStyle *m_fusionStyle = nullptr;
+    };
+#endif
 }
 
 TorrentContentWidget::TorrentContentWidget(QWidget *parent)
@@ -82,6 +116,14 @@ TorrentContentWidget::TorrentContentWidget(QWidget *parent)
     setExpandsOnDoubleClick(false);
     setSortingEnabled(true);
     setUniformRowHeights(true);
+#ifdef Q_OS_MACOS
+    if (const QString appStyleName = QApplication::style()->name(); appStyleName.compare(u"macos", Qt::CaseInsensitive) == 0)
+    {
+        auto *itemCheckStyle = new MacItemCheckStyle(appStyleName);
+        itemCheckStyle->setParent(this);
+        setStyle(itemCheckStyle);
+    }
+#endif
     header()->setSortIndicator(0, Qt::AscendingOrder);
     header()->setFirstSectionMovable(true);
     header()->setContextMenuPolicy(Qt::CustomContextMenu);
